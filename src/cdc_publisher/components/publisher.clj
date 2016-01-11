@@ -2,139 +2,114 @@
   (:require [clojure.core.async :as async]
             [clojure.tools.logging :as log]
             [com.stuartsierra.component :as component]
+            [metrics.timers :refer [timer time!]]
+            [cdc-publisher.core :refer [*metrics-group*]]
+            [cdc-publisher.protocols.queue :as queue]
+            [cdc-publisher.protocols.ccd-store :as ccd-store :refer [CCDStore]]))
 
-            [clj-kafka.new.producer :as kafka]
-            [clj-time.core :as time]
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Metrics
 
-            [cdc-util.async :refer [go-till-closed]]
-            [cdc-util.filter :as filter]
-            [cdc-util.kafka :refer :all]
-
-            [cdc-publisher.core :refer [dml->msg]]
-            [cdc-publisher.components.queue-store :as queue-store]))
+(defn queue-publisher-loop-timer []
+  (timer [*metrics-group* "queue-publisher" "loop-time"]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Utility fns
 
-(defn ccds-to-publish
-  "Reads all messages posted to the specified control topic and
-  returns the subset that represent Change Capture Definitions
-  that are ready to publish.
+(defn >!active-ccds
+  "Publishes all known active Change Capture Definitions from the
+  controller to `ch` and continuously posts newly activated CCDs until
+  `ch` is closed."
+  [store ch]
+  {:pre [(satisfies? CCDStore store)]}
+  (let [[ccds offset] (ccd-store/known-ccds store)
+        active-ccd-ch (async/chan 1 (filter #(= :active (:status %))))]
+    ;; TODO validate CCDs and check for existence of queue/topic, reject invalid ones
+    (async/pipe active-ccd-ch ch false)
+    (async/onto-chan active-ccd-ch ccds false)
+    (ccd-store/post-updates-to-chan store active-ccd-ch (inc offset))))
 
-  Resets the consumer offset for the topic to the maximum offset
-  read."
-  [kafka-config topic]
-  (filter
-   #(= :active (:status %))
-   (topic->last-known-ccd-states kafka-config topic)))
+(defn queue-publisher-loop
+  "Returns an async thread that repeatedly loops over `queues` passing
+  the value of `(dequeue-fn queue)` to `publish-fn` for each `queue`
+  in turn until `should-terminate?` returns true.
 
-(defn some-references-missing?
-  "Returns a collection of keys indicating those references from the
-  given Change Capture Definition that are missing from the provided
-  stores, or `nil` if all references are valid."
-  [{:keys [queue] :as ccd} queue-store kafka]
-  (-> []
-      (#(if (queue-store/queue-exists? queue-store queue) % (conj % :queue)))
-      (#(if (topic-exists? (:config kafka) queue) % (conj % :topic)))
-      seq))
+  Records total queue loop processing time to the
+  `queue-publisher-loop-timer` metric.
 
-(defn filter-ccds-for-publication
-  "Returns a transducer that filters out any received Change Capture
-  Definitions that are not valid for publication.
+  (Note: `publish-fn` is only called when `dequeue-fn` returns a
+  non-nil value.)
 
-  Calls `fail-fn` with any definitions that fail validation, updated
-  with an appropriate error status."
-  [queue-store kafka fail-fn]
-  (fn [xf]
-    (fn
-      ([] (xf))
-      ([rs] (xf rs))
-      ([rs ccd]
-       (if-let [missing (some-references-missing? ccd queue-store kafka)]
-         (do
-           (fail-fn
-            (merge
-             ccd
-             {:status :error
-              :timestamp (time/now)
-              :error {:type "PublicationError"
-                      :message (str "missing " missing)}}))
-           rs)
-         (xf rs ccd))))))
+  `queues` is the sequence of queues to process. It _may_ be an
+  atom/future/ref in which case it will be `deref`erenced at the start
+  of each iteration of the loop.
 
-(defn create-publication!
-  [{:keys [queue] :as ccd} queue-store kafka]
-  (queue-store/dequeue-loop
-   queue-store
-   queue
-   (fn [dml]
-     (let [{:keys [key value]} (dml->msg dml)]
-       @(kafka/send (:producer kafka) (kafka/record queue key value))))))
+  `process-msg-from-queue` should accept a single argument—the queue
+  extracted from `queues`—and process a single message from it. Any
+  return value will be ignored.
+
+  `should-terminate?` should be a `fn` taking zero arguments that
+  returns truthy when the publication loop should be stopped.
+  (Typically this will just be a simple wrapper around an `atom`
+  that you're `reset!`ing to `false` when processing needs to
+  stop.)"
+  [queues process-msg-from-queue should-terminate?]
+  (async/thread
+    (loop []
+      (time!
+       (queue-publisher-loop-timer)
+       (doseq [q (if (instance? clojure.lang.IDeref queues)
+                   (deref queues)
+                   queues)
+               :while (not (should-terminate?))]
+         (process-msg-from-queue q)))
+      (when-not (should-terminate?)
+        (recur)))))
+
+(defn dequeue-and-send!
+  "Dequeues a message from `queue` on `src` on posts it to the same
+  queue on `dst`."
+  [src dst queue]
+  {:pre [(satisfies? queue/QueueReader src)
+         (satisfies? queue/QueueWriter dst)]}
+  (queue/dequeue-sync src queue #(queue/enqueue! dst queue %)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Component
 
-(defrecord Publisher [control-topic kafka queue-store]
+(defrecord Publisher [ccd-store src dst]
   component/Lifecycle
   (start [this]
-    (if (:publications this)
+    (if (and (:active? this) @(:active? this))
       this
-      (do
-        (log/info "starting publisher")
-        (when-not (topic-exists? (:config kafka) control-topic)
-          (create-control-topic! (:config kafka) control-topic))
-        (let [ccds (ccds-to-publish (:config kafka) control-topic)
-              _ (log/info "found" (count ccds) "CCDs ready to publish")
-              ;; seed the publication queue with all currently active CCDs
-              publication-queue (async/chan
-                                 100
-                                 (filter-ccds-for-publication
-                                  queue-store
-                                  kafka
-                                  (fn [ccd]
-                                    (send-ccd (:producer kafka) control-topic ccd))))
-              _ (async/onto-chan publication-queue ccds false)
-              ;; put any new CCD activations onto the publication queue
-              activations (async/chan
-                           1
-                           (filter/msgs->ccds-with-status :active))
-              _ (async/pipe activations publication-queue)
-              ccd-loop (ccd-topic-onto-chan activations control-topic (:config kafka))
-              ;; create and track our publications
-              publications (atom {})
-              publication-loop
-              (go-till-closed
-               publication-queue
-               (fn [{:keys [queue] :as ccd} _]
-                 (if (get @publications queue)
-                   (log/warn "already publishing" queue)
-                   (do
-                     (swap! publications
-                            assoc queue
-                            (create-publication! ccd queue-store kafka))
-                     (log/info "started publishing" queue)))))]
-          (assoc this
-                 :queue publication-queue
-                 :publications publications
-                 :ccd-loop ccd-loop
-                 :publication-loop publication-loop)))))
+      (let [active? (atom true)
+            queues (atom [])
+            queue-chan (async/chan 10 (map :queue))
+            queue-enabler (async/go-loop []
+                            (when-let [q (async/<! queue-chan)]
+                              (log/info (str "adding " q " to the publication list"))
+                              (swap! queues conj q)
+                              (recur)))]
+        (>!active-ccds ccd-store queue-chan)
+        (assoc this
+               :active? active?
+               :chan queue-chan
+               :thread (queue-publisher-loop
+                        queues
+                        (partial dequeue-and-send! src dst)
+                        #(not @active?))))))
   (stop [this]
-    (if (:publications this)
-      (do
-        (doseq [[k l] (select-keys this [:ccd-loop :publication-loop])]
-          (log/info "terminating loop" k)
-          (.close l))
-        (doseq [[k l] @(:publications this)]
-          (log/info "stopping publication of" k)
-          (.close l))
-        (log/info "stopped publisher")
-        (dissoc this :queue :publications :ccd-loop :publication-loop))
-      this)))
+    (when-let [a (:active? this)]
+      (log/info "stopping publisher")
+      (reset! a false))
+    (when-let [ch (:chan this)]
+      (async/close! ch))
+    (dissoc this :active? :chan :thread)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Public
 
-(defn new-publisher [control-topic]
+(defn publisher []
   (component/using
-   (map->Publisher {:control-topic control-topic})
-   [:kafka :queue-store]))
+   (map->Publisher {})
+   [:ccd-store :src :dst]))

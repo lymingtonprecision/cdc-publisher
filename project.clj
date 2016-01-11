@@ -15,6 +15,10 @@
                  [org.clojure/tools.logging "0.3.1"]
                  [clj-logging-config "1.9.12"]
 
+                 ;; metrics
+                 [metrics-clojure "2.6.0"]
+                 [metrics-kafka-reporter/reporter-clj "0.1.0"]
+
                  ;; database
                  [org.clojure/java.jdbc "0.4.2"]
                  [yesql "0.5.1"]

@@ -8,6 +8,8 @@
 
             [clj-logging-config.log4j :refer [set-loggers!]]
 
+            [metrics.reporters.jmx :as metrics.jmx]
+
             [cdc-publisher.system :refer [new-system]]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -56,10 +58,16 @@
            (read-system-env)
            (read-system-props))))
 
+(in-ns 'user)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Metrics reporting
+
+(defonce metrics-jmx-reporter (metrics.jmx/reporter {}))
+(metrics.jmx/start metrics-jmx-reporter)
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; System reloading
-
-(in-ns 'user)
 
 (reloaded.repl/set-init!
  (fn []

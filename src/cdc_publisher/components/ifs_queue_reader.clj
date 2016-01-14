@@ -2,7 +2,7 @@
   (:require [clojure.java.jdbc :as jdbc :refer [with-db-transaction]]
             [com.stuartsierra.component :as component]
             [metrics.meters :as meter :refer [meter]]
-            [metrics.timers :refer [timer time!]]
+            [metrics.timers :as timer :refer [timer time!]]
             [yesql.util :refer [slurp-from-classpath]]
             [cdc-publisher.core :refer [*metrics-group* dml->msg]]
             [cdc-publisher.protocols.queue :refer [QueueReader]]))
@@ -49,19 +49,16 @@
   (dequeue! [this queue]
     (.dequeue-sync this queue identity))
   (dequeue-sync [this queue f]
-    (time!
-     (dequeue-timer)
-     (time!
-      (dequeue-timer queue)
+    (let [ts (doall (map timer/start [(dequeue-timer queue) (dequeue-timer)]))]
       (try
         (with-db-transaction [db db-spec]
           (when-let [dml (dequeue-msg! db queue)]
-            (meter/mark! (dequeue-count))
-            (meter/mark! (dequeue-count queue))
-            (f (dml->msg dml))))
+            (doseq [m [(dequeue-count queue) (dequeue-count)]] (meter/mark! m))
+            (f (dml->msg dml)))
+          (doseq [t ts] (timer/stop t)))
         (catch java.sql.SQLException e
           (when (contains? #{dequeue-timeout invalid-queue} (.getErrorCode e))
-            nil)))))))
+            nil))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Public

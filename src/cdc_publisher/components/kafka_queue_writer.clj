@@ -2,7 +2,7 @@
   (:require [clojure.tools.logging :as log]
             [com.stuartsierra.component :as component]
             [metrics.meters :as meter :refer [meter]]
-            [metrics.timers :refer [timer time!]]
+            [metrics.timers :as timer :refer [timer time!]]
             [cdc-publisher.core :refer [*metrics-group*]]
             [cdc-publisher.protocols.queue :refer [QueueWriter]])
   (:import java.util.concurrent.TimeUnit
@@ -62,15 +62,11 @@
 
   QueueWriter
   (enqueue! [this queue {:keys [key value] :as msg}]
-    (let [producer (:producer this)]
-      (time!
-       (enqueue-timer)
-       (time!
-        (enqueue-timer queue)
-        @(.send producer (ProducerRecord. queue key value)))))
-    (meter/mark! (enqueue-count queue))
-    (meter/mark! (enqueue-count))
-    true))
+    (let [producer (:producer this)
+          ts (doall (map timer/start [(enqueue-timer queue) (enqueue-timer)]))]
+      @(.send producer (ProducerRecord. queue key value))
+      (doseq [t ts] (timer/stop t))
+      (doseq [m [(enqueue-count queue) (enqueue-count)]] (meter/mark! m)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Public

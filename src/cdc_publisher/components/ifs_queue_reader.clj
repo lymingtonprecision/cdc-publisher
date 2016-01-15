@@ -54,11 +54,12 @@
         (with-db-transaction [db db-spec]
           (when-let [dml (dequeue-msg! db queue)]
             (doseq [m [(dequeue-count queue) (dequeue-count)]] (meter/mark! m))
-            (f (dml->msg dml)))
-          (doseq [t ts] (timer/stop t)))
+            (f (dml->msg dml))))
         (catch java.sql.SQLException e
           (when (contains? #{dequeue-timeout invalid-queue} (.getErrorCode e))
-            nil))))))
+            nil))
+        (finally
+          (doseq [t ts] (timer/stop t)))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Public

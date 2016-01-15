@@ -68,11 +68,30 @@
 
 (defn dequeue-and-send!
   "Dequeues a message from `queue` on `src` on posts it to the same
-  queue on `dst`."
+  queue on `dst`.
+
+  Retries enqueues (on a re-triable error) 10 times before logging
+  them as failed and returning `nil` without committing the dequeue."
   [src dst queue]
   {:pre [(satisfies? queue/QueueReader src)
          (satisfies? queue/QueueWriter dst)]}
-  (queue/dequeue-sync src queue #(queue/enqueue! dst queue %)))
+  (binding [queue/*enqueue-error*
+            (fn [msg info]
+              (log/error "enqueue failed:" msg))]
+    (queue/dequeue-sync
+     src queue
+     (fn [msg]
+       (binding [queue/*retriable-enqueue-error*
+                 (fn [& args]
+                   (queue/reset! dst)
+                   [::retry args])]
+         (loop [attempt 0]
+           (when (pos? attempt) (log/debug "enqueue retry attempt" attempt))
+           (when-let [r (queue/enqueue! dst queue msg)]
+             (if (and (sequential? r) (= ::retry (first r)))
+               (if (= attempt 10)
+                 (apply queue/*enqueue-error* (second r))
+                 (recur (inc attempt)))))))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Component

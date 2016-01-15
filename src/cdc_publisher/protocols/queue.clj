@@ -1,4 +1,11 @@
-(ns cdc-publisher.protocols.queue)
+(ns cdc-publisher.protocols.queue
+  (:refer-clojure :exclude [reset!]))
+
+(defn ^:dynamic *enqueue-error* [msg info]
+  (throw (ex-info msg info)))
+
+(defn ^:dynamic *retriable-enqueue-error* [msg info]
+  (*enqueue-error* msg info))
 
 (defprotocol QueueReader
   (dequeue! [this queue]
@@ -16,4 +23,5 @@
     `f` will _not_ be called and `nil` returned."))
 
 (defprotocol QueueWriter
+  (reset! [this])
   (enqueue! [this queue msg]))

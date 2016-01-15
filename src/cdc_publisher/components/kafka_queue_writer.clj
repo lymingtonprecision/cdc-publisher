@@ -4,11 +4,14 @@
             [metrics.meters :as meter :refer [meter]]
             [metrics.timers :as timer :refer [timer time!]]
             [cdc-publisher.core :refer [*metrics-group*]]
-            [cdc-publisher.protocols.queue :refer [QueueWriter]])
-  (:import java.util.concurrent.TimeUnit
+            [cdc-publisher.protocols.queue :as queue])
+  (:import java.lang.Math
+           java.util.concurrent.TimeUnit
+           java.util.concurrent.ExecutionException
            org.apache.kafka.clients.producer.KafkaProducer
            org.apache.kafka.clients.producer.ProducerRecord
-           org.apache.kafka.common.serialization.StringSerializer))
+           org.apache.kafka.common.serialization.StringSerializer
+           org.apache.kafka.common.errors.RetriableException))
 
 (def ^:dynamic *default-close-timeout-ms* (* 10 1000))
 
@@ -46,6 +49,18 @@
    (StringSerializer.)
    (StringSerializer.)))
 
+(defn disconnect!
+  [producer]
+  (.close producer *default-close-timeout-ms* TimeUnit/MILLISECONDS))
+
+(defn reconnect!
+  [queue-writer]
+  (swap!
+   (:producer queue-writer)
+   (fn [p]
+     (future (disconnect! p))
+     (producer (:bootstrap-servers queue-writer)))))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Component
 
@@ -54,19 +69,32 @@
   (start [this]
     (if (:producer this)
       this
-      (assoc this :producer (producer bootstrap-servers))))
+      (assoc this :producer (atom (producer bootstrap-servers)))))
   (stop [this]
-    (when-let [p (:producer this)]
-      (.close p *default-close-timeout-ms* TimeUnit/MILLISECONDS))
+    (when-let [p (some-> this :producer deref)]
+      (disconnect! p))
     (assoc this :producer nil))
 
-  QueueWriter
+  queue/QueueWriter
+  (reset! [this]
+    (reconnect! this))
   (enqueue! [this queue {:keys [key value] :as msg}]
-    (let [producer (:producer this)
-          ts (doall (map timer/start [(enqueue-timer queue) (enqueue-timer)]))]
-      @(.send producer (ProducerRecord. queue key value))
-      (doseq [t ts] (timer/stop t))
-      (doseq [m [(enqueue-count queue) (enqueue-count)]] (meter/mark! m)))))
+    (try
+      (let [producer @(:producer this)
+            ts (doall (map timer/start [(enqueue-timer queue) (enqueue-timer)]))]
+        @(.send producer (ProducerRecord. queue key value))
+        (doseq [t ts] (timer/stop t))
+        (doseq [m [(enqueue-count queue) (enqueue-count)]] (meter/mark! m)))
+      (catch ExecutionException e
+        (if (instance? RetriableException (.getCause e))
+          (queue/*retriable-enqueue-error*
+           (.getMessage e)
+           {})
+          (queue/*enqueue-error*
+           (.getMessage e)
+           {:queue queue
+            :msg msg
+            :ex (.getCause e)}))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Public

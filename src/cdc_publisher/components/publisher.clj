@@ -30,9 +30,9 @@
     (ccd-store/post-updates-to-chan store active-ccd-ch (inc offset))))
 
 (defn queue-publisher-loop
-  "Returns an async thread that repeatedly loops over `queues` passing
-  the value of `(dequeue-fn queue)` to `publish-fn` for each `queue`
-  in turn until `should-terminate?` returns true.
+  "Creates a loop that repeatedly iterates over `queues` passing the
+  value of `(dequeue-fn queue)` to `publish-fn` for each `queue` in
+  turn until `should-terminate?` returns true.
 
   Records total queue loop processing time to the
   `queue-publisher-loop-timer` metric.
@@ -54,17 +54,27 @@
   that you're `reset!`ing to `false` when processing needs to
   stop.)"
   [queues process-msg-from-queue should-terminate?]
-  (async/thread
-    (loop []
-      (time!
-       (queue-publisher-loop-timer)
-       (doseq [q (if (instance? clojure.lang.IDeref queues)
-                   (deref queues)
-                   queues)
-               :while (not (should-terminate?))]
-         (process-msg-from-queue q)))
-      (when-not (should-terminate?)
-        (recur)))))
+  (loop []
+    (time!
+     (queue-publisher-loop-timer)
+     (doseq [q (if (instance? clojure.lang.IDeref queues)
+                 (deref queues)
+                 queues)
+             :while (not (should-terminate?))]
+       (process-msg-from-queue q)))
+    (when-not (should-terminate?)
+      (recur))))
+
+(defn queue-publisher-thread
+  "Returns a user (non-daemon) thread executing a
+  `queue-publisher-loop` with the provided `args`."
+  [& args]
+  (let [l (reify Runnable
+            (run [this] (apply queue-publisher-loop args)))
+        t (Thread. l)]
+    (doto t
+      (.setDaemon false)
+      (.start))))
 
 (defn dequeue-and-send!
   "Dequeues a message from `queue` on `src` on posts it to the same
@@ -109,11 +119,12 @@
                               (log/info (str "adding " q " to the publication list"))
                               (swap! queues conj q)
                               (recur)))]
+        (log/info "starting publisher")
         (>!active-ccds ccd-store queue-chan)
         (assoc this
                :active? active?
                :chan queue-chan
-               :thread (queue-publisher-loop
+               :thread (queue-publisher-thread
                         queues
                         (partial dequeue-and-send! src dst)
                         #(not @active?))))))

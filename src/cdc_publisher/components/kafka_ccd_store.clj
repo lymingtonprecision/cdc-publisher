@@ -130,7 +130,7 @@
     (with-open [c (consumer bootstrap-servers :earliest)]
       (assign-topic! c topic)
       (let [rs (.poll c *default-poll-timeout*)]
-        [(last-known-values rs) (apply max (map #(.offset %) rs))])))
+        [(last-known-values rs) (apply max 0 (map #(.offset %) rs))])))
   (post-updates-to-chan [this ch]
     (.post-updates-to-chan this ch nil))
   (post-updates-to-chan [this ch as-of]

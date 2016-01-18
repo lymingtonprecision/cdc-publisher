@@ -81,10 +81,10 @@
   (enqueue! [this queue {:keys [key value] :as msg}]
     (try
       (let [producer @(:producer this)
-            ts (doall (map timer/start [(enqueue-timer queue) (enqueue-timer)]))]
+            t (timer/start (enqueue-timer))]
         @(.send producer (ProducerRecord. queue key value))
-        (doseq [t ts] (timer/stop t))
-        (doseq [m [(enqueue-count queue) (enqueue-count)]] (meter/mark! m)))
+        (timer/stop t)
+        (meter/mark! (enqueue-count)))
       (catch ExecutionException e
         (if (instance? RetriableException (.getCause e))
           (queue/*retriable-enqueue-error*

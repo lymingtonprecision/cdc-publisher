@@ -49,17 +49,17 @@
   (dequeue! [this queue]
     (.dequeue-sync this queue identity))
   (dequeue-sync [this queue f]
-    (let [ts (doall (map timer/start [(dequeue-timer queue) (dequeue-timer)]))]
+    (let [t (timer/start (dequeue-timer))]
       (try
         (with-db-transaction [db db-spec]
           (when-let [dml (dequeue-msg! db queue)]
-            (doseq [m [(dequeue-count queue) (dequeue-count)]] (meter/mark! m))
+            (meter/mark! (dequeue-count))
             (f (dml->msg dml))))
         (catch java.sql.SQLException e
           (when (contains? #{dequeue-timeout invalid-queue} (.getErrorCode e))
             nil))
         (finally
-          (doseq [t ts] (timer/stop t)))))))
+          (timer/stop t))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Public

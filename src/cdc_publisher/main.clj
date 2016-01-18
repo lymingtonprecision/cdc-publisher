@@ -2,7 +2,13 @@
   (:require [clojure.tools.logging :as log]
             [clj-logging-config.log4j :refer [set-loggers!]]
             [com.stuartsierra.component :as component]
+            [environ.core :refer [env]]
+            [metrics.core :as metrics]
+            [metrics.reporters :as metrics.reporter]
+            [metrics.reporters.kafka :as metrics.kafka]
             [cdc-publisher.system :refer [new-system]])
+  (:import org.apache.kafka.clients.producer.KafkaProducer
+           org.apache.kafka.common.serialization.StringSerializer)
   (:gen-class))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -36,10 +42,21 @@
      (uncaughtException [_ thread ex]
        (log/error ex "Uncaught exception on" (.getName thread))))))
 
+(defn init-metrics! []
+  (metrics.reporter/start
+   (metrics.kafka/reporter
+    metrics/default-registry
+    (KafkaProducer.
+     {"bootstrap.servers" (:kafka-brokers env)}
+     (StringSerializer.)
+     (StringSerializer.)))
+   10))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Main
 
 (defn -main [& args]
   (init-logging!)
+  (init-metrics!)
   (let [sys (component/start (new-system))]
     (.addShutdownHook (Runtime/getRuntime) (Thread. #(component/stop sys)))))

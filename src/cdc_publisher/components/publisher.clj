@@ -2,6 +2,8 @@
   (:require [clojure.core.async :as async]
             [clojure.tools.logging :as log]
             [com.stuartsierra.component :as component]
+            [metrics.core :as metrics]
+            [metrics.gauges :refer [gauge-fn]]
             [metrics.timers :refer [timer time!]]
             [cdc-publisher.core :refer [*metrics-group*]]
             [cdc-publisher.protocols.queue :as queue]
@@ -12,6 +14,9 @@
 
 (defn queue-publisher-loop-timer []
   (timer [*metrics-group* "queue-publisher" "loop-time"]))
+
+(def queue-publisher-queues-gauge
+  [*metrics-group* "queue-publisher" "queues"])
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Utility fns
@@ -120,6 +125,7 @@
                               (swap! queues conj q)
                               (recur)))]
         (log/info "starting publisher")
+        (gauge-fn queue-publisher-queues-gauge #(count @queues))
         (>!active-ccds ccd-store queue-chan)
         (assoc this
                :active? active?
@@ -134,6 +140,7 @@
       (reset! a false))
     (when-let [ch (:chan this)]
       (async/close! ch))
+    (metrics/remove-metric queue-publisher-queues-gauge)
     (dissoc this :active? :chan :thread)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

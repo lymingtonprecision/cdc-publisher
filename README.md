@@ -51,7 +51,10 @@ Required:
 * `DB_SERVER`
 * `DB_USER`
 * `DB_PASSWORD`
-* `ZOOKEEPER` the ZooKeeper connection string for the Kafka brokers.
+* `KAFKA_BROKERS` a Kafka [bootstrap server list][kafka-prod-conf]
+  to use for establishing connections to the Kafka brokers
+
+[kafka-prod-conf]: http://kafka.apache.org/documentation.html#producerconfigs
 
 Optional:
 
@@ -83,7 +86,7 @@ As a [Docker] container:
       -e DB_SERVER=<hostname> \
       -e DB_USER=<username> \
       -e DB_PASSWORD=<password> \
-      -e ZOOKEEPER=<connect string> \
+      -e KAFKA_BROKERS=<connect string> \
       lpe/cdc-publisher
 
 [environ]: https://github.com/weavejester/environ

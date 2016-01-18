@@ -20,8 +20,8 @@
     :db (new-database-from-env env)
     :ccd-store (kafka-ccd-store
                 (or (:control-topic env) default-control-topic)
-                (:bootstrap-servers env))
-    :dst (kafka-queue-writer (:bootstrap-servers env))
+                (:kafka-brokers env))
+    :dst (kafka-queue-writer (:kafka-brokers env))
     :src (component/using
           (ifs-queue-reader nil)
           {:db-spec :db})

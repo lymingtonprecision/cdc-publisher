@@ -5,7 +5,7 @@
             [metrics.timers :as timer :refer [timer time!]]
             [yesql.util :refer [slurp-from-classpath]]
             [cdc-publisher.core :refer [*metrics-group* dml->msg]]
-            [cdc-publisher.protocols.queue :refer [QueueReader]]))
+            [cdc-publisher.protocols.queue :as queue :refer [QueueReader]]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Metrics
@@ -52,9 +52,18 @@
     (let [t (timer/start (dequeue-timer))]
       (try
         (with-db-transaction [db db-spec]
-          (when-let [dml (dequeue-msg! db queue)]
-            (meter/mark! (dequeue-count))
-            (f (dml->msg dml))))
+          (binding [queue/*skip-message-dequeue* #(jdbc/db-set-rollback-only! db)]
+            (when-let [dml (dequeue-msg! db queue)]
+              (try
+                (meter/mark! (dequeue-count))
+                (f (dml->msg dml))
+                (catch com.fasterxml.jackson.core.JsonParseException e
+                  (queue/*malformed-message-error*
+                   (str "malformed message dequeued from " queue
+                        " (" (.getMessage e) ")")
+                   {:queue queue
+                    :message dml
+                    :f f}))))))
         (catch java.sql.SQLException e
           (when (contains? #{dequeue-timeout invalid-queue} (.getErrorCode e))
             nil))

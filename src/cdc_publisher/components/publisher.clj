@@ -9,6 +9,8 @@
             [cdc-publisher.protocols.queue :as queue]
             [cdc-publisher.protocols.ccd-store :as ccd-store :refer [CCDStore]]))
 
+(def ^:dynamic *log-error-rate-mins* 15)
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Metrics
 
@@ -20,6 +22,9 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Utility fns
+
+(defn- minutes-ago [millis]
+  (int (/ (- (java.lang.System/currentTimeMillis) millis) 1000 60)))
 
 (defn >!active-ccds
   "Publishes all known active Change Capture Definitions from the
@@ -57,18 +62,31 @@
   returns truthy when the publication loop should be stopped.
   (Typically this will just be a simple wrapper around an `atom`
   that you're `reset!`ing to `false` when processing needs to
-  stop.)"
+  stop.)
+
+  Skips any malformed messages encountered during the loop, logging
+  the error (no more often than once every `*log-error-rate-mins*`
+  minutes) but otherwise continuing processing."
   [queues process-msg-from-queue should-terminate?]
-  (loop []
-    (time!
-     (queue-publisher-loop-timer)
-     (doseq [q (if (instance? clojure.lang.IDeref queues)
-                 (deref queues)
-                 queues)
-             :while (not (should-terminate?))]
-       (process-msg-from-queue q)))
-    (when-not (should-terminate?)
-      (recur))))
+  (let [dequeue-fails (atom {})]
+    (binding [queue/*malformed-message-error*
+              (fn [msg {:keys [queue] :as info}]
+                (when-not (some-> (get @dequeue-fails queue)
+                                  minutes-ago
+                                  (< *log-error-rate-mins*))
+                  (swap! dequeue-fails assoc queue (java.lang.System/currentTimeMillis))
+                  (log/error "dequeue failed:" msg))
+                (queue/*skip-message-dequeue*))]
+      (loop []
+        (time!
+         (queue-publisher-loop-timer)
+         (doseq [q (if (instance? clojure.lang.IDeref queues)
+                     (deref queues)
+                     queues)
+                 :while (not (should-terminate?))]
+           (process-msg-from-queue q)))
+        (when-not (should-terminate?)
+          (recur))))))
 
 (defn queue-publisher-thread
   "Returns a user (non-daemon) thread executing a
@@ -92,21 +110,21 @@
          (satisfies? queue/QueueWriter dst)]}
   (binding [queue/*enqueue-error*
             (fn [msg info]
-              (log/error "enqueue failed:" msg))]
+              (log/error "enqueue failed:" msg))
+            queue/*retriable-enqueue-error*
+            (fn [& args]
+              (queue/reset! dst)
+              [::retry args])]
     (queue/dequeue-sync
      src queue
      (fn [msg]
-       (binding [queue/*retriable-enqueue-error*
-                 (fn [& args]
-                   (queue/reset! dst)
-                   [::retry args])]
-         (loop [attempt 0]
-           (when (pos? attempt) (log/debug "enqueue retry attempt" attempt))
-           (when-let [r (queue/enqueue! dst queue msg)]
-             (if (and (sequential? r) (= ::retry (first r)))
-               (if (= attempt 10)
-                 (apply queue/*enqueue-error* (second r))
-                 (recur (inc attempt)))))))))))
+       (loop [attempt 0]
+         (when (pos? attempt) (log/debug "enqueue retry attempt" attempt))
+         (when-let [r (queue/enqueue! dst queue msg)]
+           (if (and (sequential? r) (= ::retry (first r)))
+             (if (= attempt 10)
+               (apply queue/*enqueue-error* (second r))
+               (recur (inc attempt))))))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Component

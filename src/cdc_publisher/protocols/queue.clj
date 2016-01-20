@@ -1,6 +1,12 @@
 (ns cdc-publisher.protocols.queue
   (:refer-clojure :exclude [reset!]))
 
+(defn ^:dynamic *malformed-message-error* [msg info]
+  (throw (ex-info msg info)))
+
+(defn ^:dynamic *skip-message-dequeue* []
+  (throw (ex-info "*skip-message-dequeue* is unbound" {})))
+
 (defn ^:dynamic *enqueue-error* [msg info]
   (throw (ex-info msg info)))
 

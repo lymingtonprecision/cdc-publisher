@@ -97,7 +97,12 @@ As a [Docker] container:
 Nothing special, you just need to ensure you've built the uberjar first:
 
     lein unberjar
-    docker build -t lpe/cdc-publisher:latest .
+    docker build -t lymingtonprecision/cdc-publisher:latest .
+
+[Published images] are available from [Docker Hub].
+
+[Published images]: https://hub.docker.com/r/lymingtonprecision/cdc-publisher/
+[Docker Hub]: https://hub.docker.com
 
 ## License
 

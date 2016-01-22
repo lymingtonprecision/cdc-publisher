@@ -27,6 +27,48 @@ control topic with a status of `"error"` and appropriate error details.
 
 ### Dependencies
 
+#### JARs
+
+Building this project requires the Oracle JDBC Thin Driver and Oracle
+Streams Advanced Queuing classes. These can only be
+[obtained from your Oracle Database installation][oracle-jar-deps].
+
+Locate the following `.jar` files from your Oracle database
+installation and copy them to the `oracle-jars` directory within this
+project:
+
+* `app/oracle/product/11.1.0/db_1/jdbc/jlib`
+  * `ojdbc6.jar`
+* `app/oracle/product/11.1.0/db_1/jlib`
+  * `jta.jar`
+* `app/oracle/product/11.1.0/db_1/lib`
+  * `xmlparserv2.jar`
+* `app/oracle/product/11.1.0/db_1/rdbms/jlib`
+  * `xdb.jar`
+  * `aqapi.jar`
+  * `jmscommon.jar`
+
+(You should also adjust the version listed against the above libraries
+in the `project.clj` `:dependencies` and their `install-` `:aliases`
+to match your database version.)
+
+After copying all of the required `.jar`s install them to the local
+Maven repository:
+
+    lein install-ojdbc
+    lein install-aqapi
+    lein install-jta
+    lein install-xdb
+    lein install-jmscommon
+    lein install-xmlparserv2
+
+(Note: for some reason invoking multiple `localrepo install`s using
+`lein do` fails.)
+
+[oracle-jar-deps]: http://docs.oracle.com/cd/E11882_01/server.112/e11013/aq_envir.htm#ADQUE2544
+
+#### Database Packages
+
 Requires the following PL/SQL packages:
 
 * `lpe_msg_queue_api`

@@ -23,6 +23,14 @@
                  [org.clojure/java.jdbc "0.4.2"]
                  [yesql "0.5.1"]
 
+                 ;; oracle jars
+                 [oracle/ojdbc6 "11.1.0.7.0"]
+                 [oracle/aqapi "11.1.0.7.0"]
+                 [oracle/jta "11.1.0.7.0"]
+                 [oracle/xdb "11.1.0.7.0"]
+                 [oracle/jmscommon "11.1.0.7.0"]
+                 [oracle/xmlparserv2 "11.1.0.7.0"]
+
                  ;; (de-)serialization
                  [cheshire "5.5.0"]
 
@@ -39,12 +47,28 @@
 
   :uberjar-name "cdc-publisher-standalone.jar"
 
+  :plugins [[lein-localrepo "0.5.3"]]
+
   :profiles {:repl {:source-paths ["dev"]}
              :dev {:dependencies [[reloaded.repl "0.2.1"]
                                   [org.clojure/test.check "0.9.0"]
                                   [com.gfredericks/test.chuck "0.2.5"]]}}
 
   :repl-options {:init-ns user :init (reloaded.repl/init)}
+
+  :aliases
+  {"install-ojdbc"
+   ["localrepo" "install" "oracle-jars/ojdbc6.jar" "oracle/ojdbc6" "11.1.0.7.0"]
+   "install-aqapi"
+   ["localrepo" "install" "oracle-jars/aqapi.jar" "oracle/aqapi" "11.1.0.7.0"]
+   "install-jta"
+   ["localrepo" "install" "oracle-jars/jta.jar" "oracle/jta" "11.1.0.7.0"]
+   "install-xdb"
+   ["localrepo" "install" "oracle-jars/xdb.jar" "oracle/xdb" "11.1.0.7.0"]
+   "install-jmscommon"
+   ["localrepo" "install" "oracle-jars/jmscommon.jar" "oracle/jmscommon" "11.1.0.7.0"]
+   "install-xmlparserv2"
+   ["localrepo" "install" "oracle-jars/xmlparserv2.jar" "oracle/xmlparserv2" "11.1.0.7.0"]}
 
   :release-tasks [["vcs" "assert-committed"]
                   ["change" "version"

@@ -78,6 +78,7 @@ Must be run under a user account with the following permissions:
 ```sql
 create user <username> identified by <password>;
 grant create session to <username>;
+grant aq_user_role to <username>;
 grant execute on ifsapp.lpe_queue_msg to <username>;
 grant execute on ifsapp.lpe_msg_queue_api to <username>;
 ```

@@ -2,8 +2,10 @@
   (:require [clojure.core.async :as async]
             [clojure.tools.logging :as log]
             [com.stuartsierra.component :as component]
+            [metrics.gauges :refer [gauge-fn]]
+            [metrics.meters :as meter :refer [meter]]
             [cdc-util.schema.oracle-refs :as oracle-refs]
-            [cdc-publisher.core :refer [dml->msg]]
+            [cdc-publisher.core :refer [dml->msg *metrics-group*]]
             [cdc-publisher.protocols.queue :as queue]
             [cdc-publisher.protocols.ccd-store :as ccd-store :refer [CCDStore]])
   (:import javax.jms.Session
@@ -13,6 +15,15 @@
            oracle.sql.ORADataFactory))
 
 (def ^:dynamic *log-error-rate-mins* 10)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Metrics
+
+(def queue-publisher-queues-gauge
+  [*metrics-group* "queue-publisher" "queues"])
+
+(def queue-publisher-dequeue-count
+  (meter [*metrics-group* "total" "dequeue-count"]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Utility records
@@ -177,7 +188,8 @@
             MessageListener
             (onMessage [this message]
               (binding [queue/*malformed-message-error* eh]
-                (enqueue-jms-message dst queue message))))]
+                (enqueue-jms-message dst queue message)
+                (meter/mark! queue-publisher-dequeue-count))))]
     (doto (.createReceiver s q nil ora-data->queue-message)
       (.setMessageListener l))))
 
@@ -198,6 +210,7 @@
                               (swap! queues assoc q (queue-publisher c q dst))
                               (recur)))]
         (log/info "starting JMS publisher")
+        (gauge-fn queue-publisher-queues-gauge #(count @queues))
         (>!active-ccds ccd-store queue-chan)
         (assoc this
                :active? active?

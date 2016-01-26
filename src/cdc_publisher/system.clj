@@ -16,7 +16,14 @@
   ([] (new-system env))
   ([env]
    (component/system-map
-    :db (new-database-from-env env)
-    :ccd-store (kafka-ccd-store (or (:control-topic env) default-control-topic) (:kafka-brokers env))
-    :dst (kafka-queue-writer (:kafka-brokers env))
-    :publisher (jms-publisher (select-keys env [:db-name :db-server :db-user :db-password])))))
+    :db
+    (new-database-from-env env)
+    :ccd-store
+    (kafka-ccd-store
+     (get env :control-topic default-control-topic)
+     (:kafka-brokers env))
+    :dst
+    (kafka-queue-writer (:kafka-brokers env))
+    :publisher
+    (jms-publisher
+     (select-keys env [:db-name :db-server :db-user :db-password])))))

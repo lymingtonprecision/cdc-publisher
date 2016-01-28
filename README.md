@@ -48,9 +48,8 @@ project:
   * `aqapi.jar`
   * `jmscommon.jar`
 
-(You should also adjust the version listed against the above libraries
-in the `project.clj` `:dependencies` and their `install-` `:aliases`
-to match your database version.)
+(You should also adjust the ‘oracle-jar-version‘ listed at the top of the
+`project.clj` to match your database version.)
 
 After copying all of the required `.jar`s install them to the local
 Maven repository:

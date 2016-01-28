@@ -1,3 +1,5 @@
+(def oracle-jar-version "11.1.0.7.0")
+
 (defproject cdc-publisher "2.0.1-SNAPSHOT"
   :description "LPE Change Data Capture publication service"
   :url "https://github.com/lymingtonprecision/cdc-publisher"
@@ -24,12 +26,12 @@
                  [yesql "0.5.1"]
 
                  ;; oracle jars
-                 [oracle/ojdbc6 "11.1.0.7.0"]
-                 [oracle/aqapi "11.1.0.7.0"]
-                 [oracle/jta "11.1.0.7.0"]
-                 [oracle/xdb "11.1.0.7.0"]
-                 [oracle/jmscommon "11.1.0.7.0"]
-                 [oracle/xmlparserv2 "11.1.0.7.0"]
+                 [oracle/ojdbc6 ~oracle-jar-version]
+                 [oracle/aqapi ~oracle-jar-version]
+                 [oracle/jta ~oracle-jar-version]
+                 [oracle/xdb ~oracle-jar-version]
+                 [oracle/jmscommon ~oracle-jar-version]
+                 [oracle/xmlparserv2 ~oracle-jar-version]
 
                  ;; (de-)serialization
                  [cheshire "5.5.0"]
@@ -58,17 +60,17 @@
 
   :aliases
   {"install-ojdbc"
-   ["localrepo" "install" "oracle-jars/ojdbc6.jar" "oracle/ojdbc6" "11.1.0.7.0"]
+   ["localrepo" "install" "oracle-jars/ojdbc6.jar" "oracle/ojdbc6" ~oracle-jar-version]
    "install-aqapi"
-   ["localrepo" "install" "oracle-jars/aqapi.jar" "oracle/aqapi" "11.1.0.7.0"]
+   ["localrepo" "install" "oracle-jars/aqapi.jar" "oracle/aqapi" ~oracle-jar-version]
    "install-jta"
-   ["localrepo" "install" "oracle-jars/jta.jar" "oracle/jta" "11.1.0.7.0"]
+   ["localrepo" "install" "oracle-jars/jta.jar" "oracle/jta" ~oracle-jar-version]
    "install-xdb"
-   ["localrepo" "install" "oracle-jars/xdb.jar" "oracle/xdb" "11.1.0.7.0"]
+   ["localrepo" "install" "oracle-jars/xdb.jar" "oracle/xdb" ~oracle-jar-version]
    "install-jmscommon"
-   ["localrepo" "install" "oracle-jars/jmscommon.jar" "oracle/jmscommon" "11.1.0.7.0"]
+   ["localrepo" "install" "oracle-jars/jmscommon.jar" "oracle/jmscommon" ~oracle-jar-version]
    "install-xmlparserv2"
-   ["localrepo" "install" "oracle-jars/xmlparserv2.jar" "oracle/xmlparserv2" "11.1.0.7.0"]}
+   ["localrepo" "install" "oracle-jars/xmlparserv2.jar" "oracle/xmlparserv2" ~oracle-jar-version]}
 
   :release-tasks [["vcs" "assert-committed"]
                   ["change" "version"

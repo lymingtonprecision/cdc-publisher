@@ -1,6 +1,6 @@
 (def oracle-jar-version "11.1.0.7.0")
 
-(defproject cdc-publisher "2.0.1-SNAPSHOT"
+(defproject cdc-publisher "2.0.1"
   :description "LPE Change Data Capture publication service"
   :url "https://github.com/lymingtonprecision/cdc-publisher"
   :license {:name "Eclipse Public License"

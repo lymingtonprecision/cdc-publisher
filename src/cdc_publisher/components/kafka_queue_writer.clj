@@ -45,7 +45,8 @@
 (defn producer
   [bootstrap-servers]
   (KafkaProducer.
-   {"bootstrap.servers" bootstrap-servers}
+   {"bootstrap.servers" bootstrap-servers
+    "compression.type" "lz4"}
    (StringSerializer.)
    (StringSerializer.)))
 

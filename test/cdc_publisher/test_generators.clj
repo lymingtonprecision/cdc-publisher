@@ -5,6 +5,8 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Public
 
+(def gen-non-empty-string (gen/not-empty gen/string-ascii))
+
 (def gen-dml-map
   (gen/hash-map
    :id (gen/not-empty (gen/map gen/keyword (gen/one-of

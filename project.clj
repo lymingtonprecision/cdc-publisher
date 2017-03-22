@@ -38,8 +38,6 @@
 
                  ;; kafka
                  [org.apache.kafka/kafka-clients "0.10.2.0"]
-                 [clj-kafka "0.3.4"]
-                 [org.clojars.ah45/clj-kafka-util "0.1.1"]
 
                  ;; utils
                  [lymingtonprecision/cdc-util "1.2.2"]]
